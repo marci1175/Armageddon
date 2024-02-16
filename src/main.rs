@@ -1,6 +1,4 @@
-use std::{any::Any, f32::consts::PI, mem::Discriminant, thread::sleep, time::Duration};
-
-use macroquad::{miniquad::window::set_window_size, prelude::*, rand::rand, ui::InputHandler};
+use macroquad::prelude::*;
 
 static GAMESPEED: i32 = 1;
 static TIMERESOLUTION: f32 = 1.;
@@ -350,7 +348,7 @@ impl Enemy {
         );
 
         //Implement bot movement
-        
+
 
         if self.rocket_cooldown.elapsed() > std::time::Duration::from_secs(3) {
             self.children.push(Rocket::new(
