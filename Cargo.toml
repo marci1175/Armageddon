@@ -1,5 +1,5 @@
 [package]
-name = "Spacebang"
+name = "Armageddon"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 macroquad = "0.4.4"
+radians = "0.3.1"
