@@ -246,8 +246,13 @@ async fn main() {
         }
 
         //Check for collision
-        if enemy.hitbox == ship.hitbox {
+        for (index, child) in ship.children.clone().iter().enumerate() {
+            if child.hitbox == enemy.hitbox {
+                enemy.life -= 1;
 
+                //Remove rockets which hit the enemy
+                ship.children.remove(index);
+            }
         }
 
         //Call on loop end
