@@ -1,6 +1,6 @@
 use std::{any::Any, f32::consts::PI, mem::Discriminant, thread::sleep, time::Duration};
 
-use macroquad::{miniquad::window::set_window_size, prelude::*, ui::InputHandler};
+use macroquad::{miniquad::window::set_window_size, prelude::*, rand::rand, ui::InputHandler};
 
 static GAMESPEED: i32 = 1;
 static TIMERESOLUTION: f32 = 1.;
@@ -185,7 +185,7 @@ impl Spaceship {
 
     //Only used to push children items
     fn shoot(&mut self, display: &Image) -> &mut Self {
-        if is_key_down(KeyCode::Space) {
+        if is_key_pressed(KeyCode::Space) {
             self.children.push(Rocket::new(
                 self.hitbox.x,
                 self.hitbox.y,
@@ -277,7 +277,7 @@ impl Enemy {
         );
         Self {
             texture: texture.clone(),
-            hitbox: Hitbox::new(250., 250., texture),
+            hitbox: Hitbox::new(300., 0., texture),
             angle: 0.,
             life: 100,
             children: Vec::new(),
@@ -292,7 +292,7 @@ impl Enemy {
             self.hitbox.y,
             Color::new(255., 255., 255., 255.),
             DrawTextureParams {
-                rotation: self.angle.to_radians(),
+                rotation: (self.angle  + 90.).to_radians(),
                 ..Default::default()
             },
         );
@@ -307,7 +307,7 @@ impl Enemy {
             self.hitbox.x,
             self.hitbox.y + self.hitbox.texture.height(),
             self.hitbox.x
-                + self.life as f32 * (self.hitbox.texture.width() / (self.hitbox.x + 100.)),
+                + self.life as f32 * (self.hitbox.texture.width() / 100.),
             self.hitbox.y + self.hitbox.texture.height(),
             10.,
             Color::from_rgba(255, 0, 0, 255),
@@ -349,7 +349,10 @@ impl Enemy {
             display.height() as f32 - self.texture.height(),
         );
 
-        if self.rocket_cooldown.elapsed() > std::time::Duration::from_secs(5) {
+        //Implement bot movement
+        
+
+        if self.rocket_cooldown.elapsed() > std::time::Duration::from_secs(3) {
             self.children.push(Rocket::new(
                 self.hitbox.x,
                 self.hitbox.y,
@@ -434,6 +437,15 @@ async fn main() {
                 ship.children.remove(index);
             }
         }
+        for (index, child) in enemy.children.clone().iter().enumerate() {
+            if child.hitbox == ship.hitbox {
+                
+
+                //Remove rockets which hit the enemy
+                enemy.children.remove(index);
+            }
+        }
+        
 
         //Call on loop end
         next_frame().await
