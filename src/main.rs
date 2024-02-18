@@ -1,7 +1,12 @@
-use macroquad::prelude::*;
+#![allow(non_snake_case)]
+use macroquad::{audio::{load_sound_from_bytes, play_sound, PlaySoundParams, Sound}, prelude::*};
 
-static GAMESPEED: i32 = 1;
+//Default values
+static SHIP_HEALTH: f32 = 3.;
+static ENEMY_HEALTH: f32 = 100.;
+static GAMESPEED: f32 = 1.;
 static TIMERESOLUTION: f32 = 1.;
+
 struct BackgroundAnimation {
     bg: Texture2D,
     y1: f32,
@@ -30,15 +35,15 @@ impl BackgroundAnimation {
         self
     }
 
-    fn animate(&mut self, display: &Image) -> &mut Self {
-        self.y1 += GAMESPEED as f32 * TIMERESOLUTION;
-        self.y2 += GAMESPEED as f32 * TIMERESOLUTION;
+    fn animate(&mut self) -> &mut Self {
+        self.y1 += GAMESPEED * TIMERESOLUTION;
+        self.y2 += GAMESPEED * TIMERESOLUTION;
 
-        if self.y1 as usize > display.height() {
+        if self.y1 > screen_height() {
             self.y1 = -self.bg.height();
         }
 
-        if self.y2 as usize > display.height() {
+        if self.y2 > screen_height() {
             self.y2 = -self.bg.height();
         }
 
@@ -117,10 +122,11 @@ struct Spaceship {
     texture: Texture2D,
     hitbox: Hitbox,
     children: Vec<Rocket>,
+    life: f32,
 }
 
 impl Spaceship {
-    fn new() -> Self {
+    fn new(x: f32, y: f32) -> Self {
         let texture = Texture2D::from_file_with_format(
             include_bytes!("../assets/sor.png"),
             Some(ImageFormat::Png),
@@ -128,7 +134,9 @@ impl Spaceship {
         Self {
             texture: texture.clone(),
             children: Vec::new(),
-            hitbox: Hitbox::new(0., 0., texture),
+            //Spawn to the middle of the window
+            hitbox: Hitbox::new(x - texture.width() / 2., y, texture),
+            life: SHIP_HEALTH,
         }
     }
 
@@ -148,46 +156,50 @@ impl Spaceship {
         //Only works in debug mode!!!!
         self.hitbox.draw();
 
+        //Draw health bar
+        draw_line(550., 550., 550. + (self.life * 150. / SHIP_HEALTH), 550., 30., RED);
+        //Draw health text
+        draw_text(&format!("Health: {}", self.life), 550., 560., 30., WHITE);
         self
     }
 
-    fn movement(&mut self, display: &Image) -> &mut Self {
+    fn movement(&mut self) -> &mut Self {
         if is_key_down(KeyCode::Left) {
-            self.hitbox.x -= (GAMESPEED * 3) as f32;
+            self.hitbox.x -= GAMESPEED * 3.;
         }
 
         if is_key_down(KeyCode::Right) {
-            self.hitbox.x += (GAMESPEED * 3) as f32;
+            self.hitbox.x += GAMESPEED * 3.;
         }
 
         if is_key_down(KeyCode::Up) {
-            self.hitbox.y -= (GAMESPEED * 3) as f32;
+            self.hitbox.y -= GAMESPEED * 3.;
         }
 
         if is_key_down(KeyCode::Down) {
-            self.hitbox.y += (GAMESPEED * 3) as f32;
+            self.hitbox.y += GAMESPEED * 3.;
         }
 
         //Restrict movement
         self.hitbox.x = self.hitbox.x.clamp(
             0. - self.texture.width() / 3.,
-            display.width() as f32 - self.texture.width() / 1.5,
+            screen_width() as f32 - self.texture.width() / 1.5,
         );
         self.hitbox.y = self.hitbox.y.clamp(
             0. - self.texture.height() / 11.,
-            display.height() as f32 - self.texture.height(),
+            screen_height() as f32 - self.texture.height(),
         );
 
         self
     }
 
     //Only used to push children items
-    fn shoot(&mut self, display: &Image) -> &mut Self {
+    fn shoot(&mut self) -> &mut Self {
         if is_key_pressed(KeyCode::Space) {
             self.children.push(Rocket::new(
                 self.hitbox.x,
                 self.hitbox.y,
-                display,
+                screen_height(),
                 0.,
             ));
         }
@@ -217,7 +229,7 @@ struct Rocket {
 }
 
 impl Rocket {
-    fn new(x: f32, y: f32, display: &Image, angle: f32) -> Self {
+    fn new(x: f32, y: f32, display_height: f32, angle: f32) -> Self {
         let texture = Texture2D::from_file_with_format(
             include_bytes!("../assets/rocket.png"),
             Some(ImageFormat::Png),
@@ -226,7 +238,7 @@ impl Rocket {
             texture: texture.clone(),
             hitbox: Hitbox::new(x, y, texture),
             angle: angle,
-            rocket_liftime: display.height() as f32,
+            rocket_liftime: display_height,
         }
     }
 
@@ -237,7 +249,7 @@ impl Rocket {
             self.hitbox.y,
             Color::new(255., 255., 255., 255.),
             DrawTextureParams {
-                rotation: (self.angle as f32).to_radians(),
+                rotation: self.angle.to_radians(),
                 ..Default::default()
             },
         );
@@ -250,9 +262,9 @@ impl Rocket {
 
     fn animate(&mut self) -> &mut Self {
         //Calculate angle too
-        self.hitbox.y -= (6 * GAMESPEED) as f32 * (self.angle as f32).to_radians().cos();
+        self.hitbox.y -= 6. * GAMESPEED * self.angle.to_radians().cos();
 
-        self.hitbox.x += (6 * GAMESPEED) as f32 * (self.angle as f32).to_radians().sin();
+        self.hitbox.x += 6. * GAMESPEED * self.angle.to_radians().sin();
 
         self
     }
@@ -262,24 +274,28 @@ struct Enemy {
     texture: Texture2D,
     hitbox: Hitbox,
     angle: f32,
-    life: u8,
+    life: f32,
     children: Vec<Rocket>,
     rocket_cooldown: std::time::Instant,
+
+    movement: MovementState,
 }
 
 impl Enemy {
-    fn new() -> Self {
+    fn new(x: f32, y: f32) -> Self {
         let texture = Texture2D::from_file_with_format(
             include_bytes!("../assets/cigan.png"),
             Some(ImageFormat::Png),
         );
         Self {
             texture: texture.clone(),
-            hitbox: Hitbox::new(300., 0., texture),
+            hitbox: Hitbox::new(x - texture.width() / 2., y, texture),
             angle: 0.,
-            life: 100,
+            life: ENEMY_HEALTH,
             children: Vec::new(),
             rocket_cooldown: std::time::Instant::now(),
+
+            movement: MovementState { right: true, up: false, step: 1. },
         }
     }
 
@@ -305,7 +321,7 @@ impl Enemy {
             self.hitbox.x,
             self.hitbox.y + self.hitbox.texture.height(),
             self.hitbox.x
-                + self.life as f32 * (self.hitbox.texture.width() / 100.),
+                + self.life * self.hitbox.texture.width() / 100.,
             self.hitbox.y + self.hitbox.texture.height(),
             10.,
             Color::from_rgba(255, 0, 0, 255),
@@ -326,7 +342,7 @@ impl Enemy {
         self
     }
 
-    fn movement(&mut self, ship_pos: &Hitbox, display: &Image) -> &mut Self {
+    fn movement(&mut self, ship_pos: &Hitbox) -> &mut Self {
         self.angle = {
             let x_diff = self.hitbox.x - ship_pos.x;
             let y_diff = self.hitbox.y - ship_pos.y;
@@ -340,26 +356,70 @@ impl Enemy {
         //Restrict movement
         self.hitbox.x = self.hitbox.x.clamp(
             0. - self.texture.width() / 3.,
-            display.width() as f32 - self.texture.width() / 1.5,
+            screen_width() as f32 - self.texture.width() / 1.5,
         );
         self.hitbox.y = self.hitbox.y.clamp(
             0. - self.texture.height() / 11.,
-            display.height() as f32 - self.texture.height(),
+            screen_height() as f32 - self.texture.height(),
         );
 
         //Implement bot movement
+        if self.movement.up {
+            self.hitbox.y += self.movement.step;
+        } else if !self.movement.up {
+            self.hitbox.y -= self.movement.step;
+        }
 
+        if self.movement.right {
+            self.hitbox.x -= self.movement.step;
+        } else if !self.movement.right {
+            self.hitbox.x += self.movement.step;
+        }
 
-        if self.rocket_cooldown.elapsed() > std::time::Duration::from_secs(3) {
+        if self.rocket_cooldown.elapsed() > std::time::Duration::from_secs_f32(3. / (GAMESPEED * TIMERESOLUTION)) {
             self.children.push(Rocket::new(
                 self.hitbox.x,
                 self.hitbox.y,
-                display,
+                screen_height(),
                 self.angle - 90.,
             ));
 
             //Reset timer
             self.rocket_cooldown = std::time::Instant::now();
+            self.movement.step = rand::gen_range(2., 5.);
+
+            
+        }
+
+        if (rand::gen_range(0., 100.) % 3.) == 0. {
+            self.movement.up = !self.movement.up;
+        }
+
+        if (rand::gen_range(0., 100.) % 2.) == 0. {
+            self.movement.right = !self.movement.right;
+        }
+
+        //Restrict movement
+        self.hitbox.x = self.hitbox.x.clamp(
+            0. - self.texture.width() / 3.,
+            screen_width() as f32 - self.texture.width() / 1.5,
+        );
+        self.hitbox.y = self.hitbox.y.clamp(
+            0. - self.texture.height() / 11.,
+            screen_height() as f32 - self.texture.height(),
+        );
+
+        //Implement bounciness
+        if self.hitbox.x == 0. - self.texture.width() / 3. {
+            self.movement.right = !self.movement.right;
+        } else if self.hitbox.x == screen_width() as f32 - self.texture.width() / 1.5 {
+            self.movement.right = !self.movement.right;
+        }
+
+        if self.hitbox.y == 0. - self.texture.height() / 11. {
+            self.movement.up = !self.movement.up;
+        } else if self.hitbox.y == screen_height() as f32 - self.texture.height() {
+            self.movement.up = !self.movement.up;
         }
 
         self
@@ -376,30 +436,35 @@ impl Enemy {
         self
     }
 }
+struct MovementState {
+    right: bool,
+    up: bool,
+
+    step: f32,
+}
 
 #[macroquad::main("Armageddon: A végső leszámolás")]
 async fn main() {
-    let screen_data = get_screen_data();
-
+    
     let mut bg = BackgroundAnimation::new();
 
-    let mut ship = Spaceship::new();
+    let mut ship = Spaceship::new(screen_width() as f32 / 2., screen_height() as f32);
 
-    let mut enemy = Enemy::new();
+    let mut enemy = Enemy::new(screen_width() as f32 / 2., 0.);
 
     //Main loop
     loop {
-        bg.draw().animate(&screen_data);
+        bg.draw().animate();
 
         //spaceship
-        ship.draw().movement(&screen_data).children_lifetime();
+        ship.draw().movement().children_lifetime();
 
         //Check for shot
-        ship.shoot(&screen_data);
+        ship.shoot();
 
         enemy
             .draw()
-            .movement(&ship.hitbox, &screen_data)
+            .movement(&ship.hitbox)
             .children_lifetime();
 
         //Draw debug
@@ -408,11 +473,12 @@ async fn main() {
             let font_size = 20.;
             let debug = vec![
                 format!("[DEBUG]"),
-                format!("Ship: Children count: {}", ship.children.len()),
-                format!("Enemy: Hp count: {}", enemy.life),
                 format!("Fps: {}", get_fps()),
+                format!("Ship: Children count: {}", ship.children.len()),
+                format!("Ship: Life count: {}", ship.life),
+                format!("Enemy: Hp count: {}", enemy.life),
                 format!("Enemy: Children count: {}", enemy.children.len()),
-                format!("Enemy: angle target: {}", enemy.angle),
+                format!("Enemy: target angle: {}", enemy.angle),
             ];
 
             for (index, debug_item) in debug.iter().enumerate() {
@@ -429,21 +495,53 @@ async fn main() {
         //Check for collision
         for (index, child) in ship.children.clone().iter().enumerate() {
             if child.hitbox == enemy.hitbox {
-                enemy.life -= 1;
+                enemy.life -= 1.;
 
                 //Remove rockets which hit the enemy
-                ship.children.remove(index);
+                if let Some(_) = ship.children.get(index) {
+                    ship.children.remove(index);
+                }
             }
         }
         for (index, child) in enemy.children.clone().iter().enumerate() {
             if child.hitbox == ship.hitbox {
-                
-
                 //Remove rockets which hit the enemy
+                ship.life -= 1.;
+
                 enemy.children.remove(index);
             }
         }
-        
+
+        //Check life
+        if enemy.life <= 0. {
+            match &load_sound_from_bytes(include_bytes!("../assets/win.ogg")).await {
+                Ok(sound_bytes) => {
+                    play_sound(sound_bytes, PlaySoundParams { looped: false, volume: 100.});
+                }
+                Err(err) => {}
+            }
+            loop {
+                
+                draw_text(r#""Ide bejönnének a magyar gárdák szétbombáznánk őket." -Leonidas"#, screen_width() / 8., screen_height() / 2., 25., WHITE);
+                
+                next_frame().await
+            }
+        }  
+
+        if ship.life <= 0. {
+            match &load_sound_from_bytes(include_bytes!("../assets/lose.ogg")).await {
+                Ok(sound_bytes) => {
+                    play_sound(sound_bytes, PlaySoundParams { looped: false, volume: 100.});
+                }
+                Err(err) => {}
+            }
+            loop {
+                
+                draw_text(r#"Szétbombáztak a magyar gárdák"#, screen_width() / 8., screen_height() / 2., 25., WHITE);
+                
+                next_frame().await
+            }
+        }  
 
         //Call on loop end
         next_frame().await
