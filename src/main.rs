@@ -4,8 +4,7 @@ use macroquad::{audio::{load_sound_from_bytes, play_sound, PlaySoundParams, Soun
 //Default values
 static SHIP_HEALTH: f32 = 3.;
 static ENEMY_HEALTH: f32 = 100.;
-static GAMESPEED: f32 = 1.;
-static TIMERESOLUTION: f32 = 1.;
+static mut GAMESPEED: f32 = 1.;
 
 struct BackgroundAnimation {
     bg: Texture2D,
@@ -36,8 +35,8 @@ impl BackgroundAnimation {
     }
 
     fn animate(&mut self) -> &mut Self {
-        self.y1 += GAMESPEED * TIMERESOLUTION;
-        self.y2 += GAMESPEED * TIMERESOLUTION;
+        self.y1 += unsafe { GAMESPEED };
+        self.y2 += unsafe { GAMESPEED };
 
         if self.y1 > screen_height() {
             self.y1 = -self.bg.height();
@@ -165,19 +164,19 @@ impl Spaceship {
 
     fn movement(&mut self) -> &mut Self {
         if is_key_down(KeyCode::Left) {
-            self.hitbox.x -= GAMESPEED * 3.;
+            self.hitbox.x -= unsafe { GAMESPEED } * 3.;
         }
 
         if is_key_down(KeyCode::Right) {
-            self.hitbox.x += GAMESPEED * 3.;
+            self.hitbox.x += unsafe { GAMESPEED } * 3.;
         }
 
         if is_key_down(KeyCode::Up) {
-            self.hitbox.y -= GAMESPEED * 3.;
+            self.hitbox.y -= unsafe { GAMESPEED } * 3.;
         }
 
         if is_key_down(KeyCode::Down) {
-            self.hitbox.y += GAMESPEED * 3.;
+            self.hitbox.y += unsafe { GAMESPEED } * 3.;
         }
 
         //Restrict movement
@@ -262,9 +261,9 @@ impl Rocket {
 
     fn animate(&mut self) -> &mut Self {
         //Calculate angle too
-        self.hitbox.y -= 6. * GAMESPEED * self.angle.to_radians().cos();
+        self.hitbox.y -= 6. * unsafe { GAMESPEED } * self.angle.to_radians().cos();
 
-        self.hitbox.x += 6. * GAMESPEED * self.angle.to_radians().sin();
+        self.hitbox.x += 6. * unsafe { GAMESPEED } * self.angle.to_radians().sin();
 
         self
     }
@@ -376,7 +375,7 @@ impl Enemy {
             self.hitbox.x += self.movement.step;
         }
 
-        if self.rocket_cooldown.elapsed() > std::time::Duration::from_secs_f32(3. / (GAMESPEED * TIMERESOLUTION)) {
+        if self.rocket_cooldown.elapsed() > std::time::Duration::from_secs_f32(3. / (unsafe { GAMESPEED })) {
             self.children.push(Rocket::new(
                 self.hitbox.x,
                 self.hitbox.y,
@@ -511,6 +510,10 @@ async fn main() {
                 enemy.children.remove(index);
             }
         }
+
+        unsafe {
+            GAMESPEED = clamp((240 / get_fps()) as f32, 1., f32::MAX)
+        };
 
         //Check life
         if enemy.life <= 0. {
